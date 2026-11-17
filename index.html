@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Regla de divergencias</title>
+<style>
+:root{
+  --bg:#f3f5f7; --panel:#ffffff; --line:#d6dde4; --text:#17212b; --mute:#5f7183;
+  --up:#0f9d76; --down:#d64545; --accent:#1f4e79; --amber:#b9770e;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0d131a; --panel:#141c26; --line:#263341; --text:#e6edf3; --mute:#8b9cae;
+    --up:#34d6a3; --down:#ff6d6d; --accent:#7db4e6; --amber:#f2b84b;
+    color-scheme: dark;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;font-variant-numeric:tabular-nums}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:17px;margin:0;font-weight:650;flex:1;min-width:150px}
+button,select{font:inherit;color:inherit}
+.btn{border:1px solid var(--line);background:var(--panel);padding:9px 14px;border-radius:8px;cursor:pointer}
+.btn.main{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+@media (prefers-color-scheme: dark){.btn.main{color:#0d131a}}
+.btn:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+main{max-width:760px;margin:0 auto;padding:12px;display:grid;gap:12px}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;padding:9px 14px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff;font-weight:600}
+@media (prefers-color-scheme: dark){.seg button[aria-pressed="true"]{color:#0d131a}}
+.seg button.bear[aria-pressed="true"]{background:var(--down)} .seg button.bull[aria-pressed="true"]{background:var(--up)}
+select,input[type=range]{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px}
+input[type=range]{padding:0;width:110px}
+label{font-size:13px;color:var(--mute);display:flex;align-items:center;gap:6px}
+#hint{font-weight:600;min-height:22px}
+#stage{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;justify-content:center;min-height:220px;align-items:center}
+#cv{display:none;touch-action:none;border-radius:6px;cursor:crosshair;max-width:100%}
+#empty{text-align:center;color:var(--mute);padding:28px 12px;max-width:420px}
+#empty b{color:var(--text)}
+#card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;border-left-width:6px}
+#card.bear{border-left-color:var(--down)} #card.bull{border-left-color:var(--up)}
+#verdict{font-size:19px;font-weight:700;margin:0 0 4px}
+#card.bear #verdict{color:var(--down)} #card.bull #verdict{color:var(--up)}
+#sub{margin:0 0 10px;color:var(--mute)}
+.meter{height:8px;border-radius:4px;background:var(--line);overflow:hidden;margin:6px 0 4px}
+.meter i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+#card.bear .meter i{background:var(--down)} #card.bull .meter i{background:var(--up)}
+.small{font-size:13px;color:var(--mute)}
+#advice{margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line);display:none}
+#advice b{font-size:16px}
+#loupe{position:fixed;width:140px;height:140px;border-radius:50%;border:3px solid var(--accent);background:#000;display:none;pointer-events:none;z-index:9;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+#vid{display:none}
+footer{font-size:12.5px;color:var(--mute);padding:0 14px 24px;max-width:760px;margin:0 auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>Regla de divergencias</h1>
+  <button class="btn main" id="load">Cargar captura</button>
+  <button class="btn" id="share" hidden>Compartir pantalla</button>
+  <button class="btn" id="freeze" hidden>Congelar y medir</button>
+  <button class="btn" id="reset">Borrar puntos</button>
+  <input type="file" id="file" accept="image/*" hidden>
+</header>
+
+<main>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="Qué medir">
+      <button class="bear" id="mHigh" aria-pressed="true">Techos (venta)</button>
+      <button class="bull" id="mLow" aria-pressed="false">Valles (compra)</button>
+    </div>
+    <label>Gráfico
+      <select id="tf">
+        <option value="1">1m</option><option value="2">2m</option><option value="3" selected>3m</option>
+        <option value="5">5m</option><option value="10">10m</option><option value="15">15m</option>
+        <option value="30">30m</option><option value="60">1h</option>
+      </select>
+    </label>
+    <label>Tolerancia <input type="range" id="tol" min="0" max="10" step="0.5" value="2"></label>
+  </div>
+
+  <div id="hint" role="status">Carga una captura para empezar.</div>
+
+  <div id="stage">
+    <div id="empty">
+      <p><b>1.</b> Haz una captura de Pocket Option con el precio y el RSI a la vista.</p>
+      <p><b>2.</b> Pulsa <b>Cargar captura</b> y elígela.</p>
+      <p><b>3.</b> Toca dos techos (o valles) en el precio y luego los mismos momentos en el indicador.</p>
+    </div>
+    <canvas id="cv" aria-label="Captura para medir"></canvas>
+  </div>
+
+  <div id="card" aria-live="polite">
+    <p id="verdict">Sin medir</p>
+    <p id="sub">Coloca los 4 puntos para ver el resultado.</p>
+    <div class="meter"><i id="bar"></i></div>
+    <div class="small" id="angles"></div>
+    <div id="advice"></div>
+  </div>
+</main>
+
+<footer>
+  El precio y el indicador se comparan por la inclinación de cada línea. Las divergencias en OTC fallan más que en mercado real: espera una vela que confirme antes de entrar.
+</footer>
+
+<canvas id="loupe" width="140" height="140"></canvas>
+<video id="vid" muted playsinline></video>
+
+<script>
+const $=s=>document.querySelector(s);
+const cv=$('#cv'), ctx=cv.getContext('2d'), loupe=$('#loupe'), lctx=loupe.getContext('2d'), vid=$('#vid');
+let src=null, sw=0, sh=0, scale=1, dpr=1, live=false, stream=null;
+let mode='high', tf=3, tol=2, step=0, drag=null, C={};
+const pts={p:[null,null],i:[null,null]};
+const order=[['p',0],['p',1],['i',0],['i',1]];
+
+function refreshColors(){
+  const cs=getComputedStyle(document.documentElement), g=n=>cs.getPropertyValue(n).trim();
+  C={up:g('--up'),down:g('--down'),accent:g('--accent')};
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{refreshColors();draw();});
+refreshColors();
+
+if(navigator.mediaDevices&&navigator.mediaDevices.getDisplayMedia&&!/Android|iPhone|iPad/i.test(navigator.userAgent)) $('#share').hidden=false;
+
+/* ---------- cargar imagen / pantalla ---------- */
+$('#load').onclick=()=>$('#file').click();
+$('#file').onchange=e=>{if(e.target.files[0]) loadImage(e.target.files[0]); e.target.value='';};
+window.addEventListener('paste',e=>{const f=[...(e.clipboardData?e.clipboardData.files:[])].find(f=>f.type.startsWith('image/')); if(f) loadImage(f);});
+function loadImage(file){
+  const im=new Image();
+  im.onload=()=>{stopLive();src=im;sw=im.naturalWidth;sh=im.naturalHeight;resetPts();showCanvas();layout();};
+  im.src=URL.createObjectURL(file);
+}
+function showCanvas(){$('#empty').style.display='none';cv.style.display='block';}
+$('#share').onclick=async()=>{
+  try{
+    stream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:false});
+    vid.srcObject=stream; await vid.play();
+    live=true; src=vid; sw=vid.videoWidth; sh=vid.videoHeight; resetPts(); showCanvas(); layout();
+    $('#freeze').hidden=false; stream.getVideoTracks()[0].onended=()=>{stopLive();};
+    loop();
+  }catch(e){$('#hint').textContent='No se pudo compartir la pantalla.';}
+};
+function loop(){
+  if(!live) return;
+  if(vid.videoWidth!==sw||vid.videoHeight!==sh){sw=vid.videoWidth;sh=vid.videoHeight;layout();}
+  draw(); requestAnimationFrame(loop);
+}
+function stopLive(){
+  live=false; $('#freeze').hidden=true;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+}
+$('#freeze').onclick=()=>{
+  const c=document.createElement('canvas'); c.width=sw; c.height=sh; c.getContext('2d').drawImage(vid,0,0);
+  stopLive(); src=c; resetPts(); layout();
+};
+function resetPts(){pts.p=[null,null];pts.i=[null,null];step=0;drag=null;ui();}
+$('#reset').onclick=()=>{resetPts();draw();};
+
+/* ---------- controles ---------- */
+function setMode(m){
+  mode=m; $('#mHigh').setAttribute('aria-pressed',m==='high'); $('#mLow').setAttribute('aria-pressed',m==='low'); ui(); draw();
+}
+$('#mHigh').onclick=()=>setMode('high'); $('#mLow').onclick=()=>setMode('low');
+$('#tf').onchange=e=>{tf=+e.target.value;ui();};
+$('#tol').oninput=e=>{tol=+e.target.value;ui();draw();};
+window.addEventListener('resize',()=>layout());
+
+/* ---------- lienzo ---------- */
+function layout(){
+  if(!src) return;
+  const W=$('#stage').clientWidth-16, maxH=Math.max(320,innerHeight*0.72);
+  scale=Math.min(W/sw,maxH/sh); dpr=window.devicePixelRatio||1;
+  const cw=Math.round(sw*scale), ch=Math.round(sh*scale);
+  cv.style.width=cw+'px'; cv.style.height=ch+'px'; cv.width=Math.round(cw*dpr); cv.height=Math.round(ch*dpr);
+  draw();
+}
+function line(a,b,c,w){ctx.strokeStyle=c;ctx.lineWidth=w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(a.x*scale,a.y*scale);ctx.lineTo(b.x*scale,b.y*scale);ctx.stroke();}
+function handle(p,label,filled,c){
+  const x=p.x*scale,y=p.y*scale;
+  ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);
+  if(filled){ctx.globalAlpha=.85;ctx.fillStyle=c;ctx.fill();ctx.globalAlpha=1;}
+  ctx.lineWidth=2.5;ctx.strokeStyle=filled?'#fff':c;ctx.stroke();
+  ctx.font='bold 12px system-ui';ctx.fillStyle='#fff';ctx.strokeStyle='#000';ctx.lineWidth=3;
+  ctx.strokeText(label,x+12,y-10);ctx.fillText(label,x+12,y-10);
+}
+function draw(){
+  if(!src) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.drawImage(src,0,0,sw*scale,sh*scale);
+  const r=measure(), col=r&&r.dir?(r.dir==='bear'?C.down:C.up):C.accent, H=sh*scale;
+  ctx.setLineDash([5,5]);
+  for(let j=0;j<2;j++){
+    if(pts.p[j]){ctx.strokeStyle='rgba(255,255,255,.35)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(pts.p[j].x*scale,0);ctx.lineTo(pts.p[j].x*scale,H);ctx.stroke();}
+  }
+  ctx.setLineDash([]);
+  if(pts.p[0]&&pts.p[1]) line(pts.p[0],pts.p[1],col,3);
+  if(pts.i[0]&&pts.i[1]) line(pts.i[0],pts.i[1],col,3);
+  pts.p.forEach((p,j)=>p&&handle(p,'P'+(j+1),true,col));
+  pts.i.forEach((p,j)=>p&&handle(p,'I'+(j+1),false,col));
+}
+
+/* ---------- puntos ---------- */
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function setPt(k,j,x,y){
+  x=clamp(x,0,sw); y=clamp(y,0,sh);
+  if(k==='p'){pts.p[j]={x,y}; if(pts.i[j]) pts.i[j].x=x;}
+  else{const px=pts.p[j]?pts.p[j].x:x; pts.i[j]={x:px,y};}
+}
+function showLoupe(e,x,y){
+  loupe.style.display='block';
+  let left=clamp(e.clientX-70,8,innerWidth-148), top=e.clientY-190; if(top<8) top=e.clientY+70;
+  loupe.style.left=left+'px'; loupe.style.top=top+'px';
+  lctx.fillStyle='#000';lctx.fillRect(0,0,140,140);
+  lctx.drawImage(cv,(x-24)*dpr,(y-24)*dpr,48*dpr,48*dpr,0,0,140,140);
+  lctx.strokeStyle='#fff';lctx.lineWidth=1;lctx.beginPath();lctx.moveTo(70,52);lctx.lineTo(70,88);lctx.moveTo(52,70);lctx.lineTo(88,70);lctx.stroke();
+}
+function pos(e){const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+cv.addEventListener('pointerdown',e=>{
+  if(!src) return; e.preventDefault();
+  const {x,y}=pos(e); let hit=null,best=30;
+  for(const [k,j] of order){const p=pts[k][j]; if(!p) continue; const d=Math.hypot(p.x*scale-x,p.y*scale-y); if(d<best){best=d;hit=[k,j];}}
+  if(hit) drag=hit;
+  else if(step<4){drag=order[step]; step++;}
+  else return;
+  cv.setPointerCapture(e.pointerId); moveTo(e);
+});
+function moveTo(e){
+  if(!drag) return; const {x,y}=pos(e);
+  setPt(drag[0],drag[1],x/scale,y/scale); draw(); showLoupe(e,x,y); ui();
+}
+cv.addEventListener('pointermove',e=>{if(drag){e.preventDefault();moveTo(e);}});
+const end=()=>{drag=null;loupe.style.display='none';draw();ui();};
+cv.addEventListener('pointerup',end); cv.addEventListener('pointercancel',end);
+
+/* ---------- medición ---------- */
+function measure(){
+  if(!(pts.p[0]&&pts.p[1]&&pts.i[0]&&pts.i[1])) return null;
+  let a={p:pts.p[0],i:pts.i[0]}, b={p:pts.p[1],i:pts.i[1]};
+  if(a.p.x>b.p.x) [a,b]=[b,a];
+  const dx=b.p.x-a.p.x; if(dx<6) return {err:'Los dos puntos están muy juntos: sepáralos.'};
+  const ang=(u,v)=>Math.atan2(-(v.y-u.y),dx)*180/Math.PI;
+  const aP=ang(a.p,b.p), aI=ang(a.i,b.i);
+  const d=v=>v>tol?1:v<-tol?-1:0, dP=d(aP), dI=d(aI), sep=Math.abs(aP-aI);
+  const high=mode==='high'; let kind=null,dir=null,why='';
+  if(dP!==0&&dI!==0&&dP!==dI){
+    dir=high?'bear':'bull';
+    const regular=high?dP===1:dP===-1;
+    kind=regular?'regular':'hidden';
+  }else if(dP===0||dI===0){
+    why=high?'Una de las dos líneas está plana: es un doble techo, no una divergencia.':'Una de las dos líneas está plana: es un doble suelo, no una divergencia.';
+  }else why='El precio y el indicador van en el mismo sentido: confirman la tendencia, sin divergencia.';
+  const str=sep>=30?'fuerte':sep>=15?'media':'débil';
+  return {aP,aI,sep,kind,dir,str,why,dP,dI};
+}
+const fmtMin=m=>m>=60?(m/60)+' h':m+' min';
+function ui(){
+  const w=mode==='high'?'techo':'valle', ws=mode==='high'?'techos':'valles';
+  const hints=[`Toca el primer ${w} en el PRECIO`,`Toca el segundo ${w} en el PRECIO`,`Toca el primer ${w} en el INDICADOR (mismo momento)`,`Toca el segundo ${w} en el INDICADOR`,'Listo. Arrastra los puntos para afinar.'];
+  $('#hint').textContent=src?hints[step]:'Carga una captura para empezar.';
+  const card=$('#card'),v=$('#verdict'),s=$('#sub'),bar=$('#bar'),adv=$('#advice'),an=$('#angles');
+  const r=measure(); card.className=''; adv.style.display='none'; an.textContent=''; bar.style.width='0';
+  if(!r){v.textContent='Sin medir';s.textContent=src?`Coloca los 4 puntos (${ws}) para ver el resultado.`:'Coloca los 4 puntos para ver el resultado.';return;}
+  if(r.err){v.textContent='Sin medir';s.textContent=r.err;return;}
+  an.textContent=`Ángulo del precio ${r.aP.toFixed(0)}° · indicador ${r.aI.toFixed(0)}° · diferencia ${r.sep.toFixed(0)}°`;
+  if(!r.kind){v.textContent='Sin divergencia';s.textContent=r.why;return;}
+  card.className=r.dir;
+  const bear=r.dir==='bear', reg=r.kind==='regular';
+  v.textContent=`Divergencia ${bear?'bajista':'alcista'} ${reg?'regular':'oculta'} · ${r.str}`;
+  s.textContent=bear
+    ? (reg?'El precio hace techos más altos y el indicador techos más bajos: la subida pierde fuerza.':'El precio hace techos más bajos y el indicador techos más altos: suele seguir la caída.')
+    : (reg?'El precio hace valles más bajos y el indicador valles más altos: la caída pierde fuerza.':'El precio hace valles más altos y el indicador valles más bajos: suele seguir la subida.');
+  bar.style.width=Math.min(100,r.sep/60*100)+'%';
+  adv.style.display='block';
+  adv.innerHTML=`<b>Posible ${bear?'VENDER':'COMPRAR'}</b> · expiración de ${fmtMin(tf)} a ${fmtMin(tf*2)} (1 a 2 velas de ${fmtMin(tf)}).<div class="small">Entra solo si la siguiente vela cierra a favor. Si el precio ya se movió mucho desde el ${w}, la señal llegó tarde.</div>`;
+}
+ui();
+</script>
+</body>
+</html>
